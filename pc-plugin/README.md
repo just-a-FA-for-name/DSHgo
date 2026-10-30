@@ -1,13 +1,17 @@
-# dsh-phone-remote V1.2
+# dsh-phone-remote V1.3
 
 DSHgo 的电脑端桥接插件。负责把手机请求交给电脑上运行的 dsh 工作台，维持页面/实时连接、登录转接和本地端口穿透。
 
-## 从 V1.1 升级
+V1.3 修复桌面 CLI 路径自动发现、Serve 失败重复等待，以及 WebView 页面启动兼容性。完整边界见仓库 docs/V1.3验收记录.md。
 
-1. 下载 V1.2 发布页的 `DSHgo-pc-plugin-v1.2.zip`，完整解压。
+已有 DSH 任务运行时先不要重启。桥接页面修复可以单独重启桥接生效；CLI 路径与 Serve 退避需要重新加载完整插件，在任务结束后重启桌面端。
+
+## 从 V1.1 / V1.2 升级到 V1.3
+
+1. 使用配套的 `DSHgo-pc-plugin-v1.3.zip`，完整解压。
 2. 打开 `pc-plugin` 文件夹，双击 `install.bat`，覆盖更新原有插件。
 3. 退出并重新打开 dsh 桌面版。
-4. 手机覆盖安装 `DSHgo-v1.2.apk`。
+4. 手机覆盖安装配套 `DSHgo-v1.3.apk`。
 
 原有 Tailscale 安装与账号继续使用，无须额外安装第二套远程工具。若使用自定义配置，请保留并检查配置。
 
@@ -37,4 +41,4 @@ V1.2 的文件续传需要电脑端提供分块暂存、已确认偏移和最终
 
 配置见 `cordis.patch.yml` 中 phone-remote 条目。卸载时从 profile 的 package.json 移除 dsh-phone-remote 依赖，并移除对应配置，再重启 dsh。
 
-完整更新与测试限制见 [V1.2 发布说明](https://github.com/just-a-FA-for-name/DSHgo/releases/tag/v1.2)。
+完整更新与测试限制见 [V1.3 发布说明](https://github.com/just-a-FA-for-name/DSHgo/releases/tag/v1.3)。

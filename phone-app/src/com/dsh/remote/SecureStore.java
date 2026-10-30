@@ -14,8 +14,7 @@ import android.util.Log;
 
 import org.json.JSONArray;
 
-import java.io.FileDescriptor;
-import java.lang.reflect.Field;
+import android.os.ParcelFileDescriptor;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -203,15 +202,16 @@ public final class SecureStore implements libtailscale.AppContext {
             ConnectivityManager cm =
                 (ConnectivityManager) ctx.getSystemService(Context.CONNECTIVITY_SERVICE);
             Network best = physicalNetwork(cm);
-            if (best == null) return false;
-            FileDescriptor fdObj = new FileDescriptor();
-            Field f = FileDescriptor.class.getDeclaredField("descriptor");
-            f.setAccessible(true);
-            f.setInt(fdObj, fd);
-            best.bindSocket(fdObj);
+            if (best == null) { Diagnostics.socketBinding(ctx,2); return false; }
+            // Duplicate ownership through the public API. Closing the wrapper
+            // must not close Go's original descriptor. No hidden-field reflection.
+            try (ParcelFileDescriptor duplicate=ParcelFileDescriptor.fromFd(fd)) {
+                best.bindSocket(duplicate.getFileDescriptor());
+            }
+            Diagnostics.socketBinding(ctx,1);
             return true;
         } catch (Exception e) {
-            Log.w(TAG, "bindSocketToNetwork: " + e.getMessage());
+            Diagnostics.socketBinding(ctx,3);
             return false;
         }
     }

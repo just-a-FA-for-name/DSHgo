@@ -1,3 +1,31 @@
+/* Minimal compatibility before any workbench module executes. */
+(function(){
+  'use strict';
+  if(window.__dshBootstrapVersion)return;
+  window.__dshBootstrapVersion='1.3';
+  if(!Promise.withResolvers)Promise.withResolvers=function(){
+    let resolve,reject;const promise=new this((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};
+  };
+  if(!AbortSignal.any)AbortSignal.any=function(signals){
+    const list=Array.from(signals);
+    for(const signal of list)if(!(signal instanceof AbortSignal))throw new TypeError('Expected AbortSignal');
+    const controller=new AbortController(),listeners=new Map();
+    const cleanup=()=>{for(const [signal,listener]of listeners)signal.removeEventListener('abort',listener);listeners.clear();};
+    const abort=signal=>{if(!controller.signal.aborted)controller.abort(signal.reason);cleanup();};
+    for(const signal of list)if(signal.aborted){abort(signal);return controller.signal;}
+    for(const signal of new Set(list)){const listener=()=>abort(signal);listeners.set(signal,listener);signal.addEventListener('abort',listener,{once:true});}
+    return controller.signal;
+  };
+  const report=(kind,detail)=>{try{window.DSHDiagnostics?.pageEvent(kind,detail);}catch(_){}};
+  const category=source=>{try{const p=new URL(source,location.href).pathname;return p.startsWith('/plugins/')?1:p.startsWith('/assets/')?2:p==='/__dsh/transport.js'?3:4;}catch(_){return 4;}};
+  addEventListener('error',event=>{
+    if(event.target!==window){if(event.target?.tagName==='SCRIPT')report(1,category(event.target.src));}
+    else report(2,event.error?.name==='TypeError'?1:event.error?.name==='SyntaxError'?2:0);
+  },true);
+  addEventListener('unhandledrejection',event=>report(3,event.reason?.name==='TypeError'?1:0));
+  addEventListener('DOMContentLoaded',()=>report(4,document.body?1:0),{once:true});
+  addEventListener('load',()=>report(5,1),{once:true});
+})();
 /* Runs before DSH boot. Preserve the host's Worker protocol and file receipts. */
 (function () {
   'use strict';
@@ -18,9 +46,7 @@
       const run = async attempt => {
         try {
           const response = await fetchRead.apply(window, args);
-          const reachable = response.ok || (response.status >= 400 && response.status < 500
-            && ![401, 403, 408, 429].includes(response.status));
-          window.__dshTransportResult?.(input, reachable);
+          window.__dshTransportResult?.(input, response.ok, response.status);
           return response;
         } catch (error) {
           if (error.name !== 'AbortError' && !signal?.aborted) window.__dshTransportResult?.(input, false);

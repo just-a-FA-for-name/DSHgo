@@ -13,7 +13,10 @@ const {execFileSync} = require('node:child_process');
 
 function bridge() {
   const file = path.join(__dirname, 'bridge/dsh-phone-proxy.cjs');
-  const source = fs.readFileSync(file, 'utf8').split('\nhttp\n  .createServer')[0];
+  const full = fs.readFileSync(file, 'utf8').replace(/\r\n/g,'\n');
+  const boundary='\nhttp\n  .createServer';
+  assert.ok(full.includes(boundary),'test must exclude all production listener startup');
+  const source=full.split(boundary)[0];
   const context = vm.createContext({
     require: require('node:module').createRequire(file), console, Buffer, setTimeout, clearTimeout,
     setInterval, clearInterval, URL, __dirname: path.dirname(file),
@@ -97,6 +100,8 @@ test('compressed HTML installs transport before DSH boot and is never cached', a
   assert.equal(output, html.replace('<head>', '<head><script src="/__dsh/transport.js"></script>'));
   assert.equal(res.headers['cache-control'], 'no-store');
   assert.equal(res.headers.etag, undefined);
+  assert.equal(res.headers['cross-origin-embedder-policy'],undefined);
+  assert.equal(res.headers['cross-origin-opener-policy'],undefined);
 });
 
 test('API replies override stale upstream caching', async t => {

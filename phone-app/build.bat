@@ -45,7 +45,7 @@ if exist lib\x86_64 rmdir /s /q lib\x86_64
 popd
 
 echo [3/6] compile java...
-"%JDK%\javac.exe" -encoding UTF-8 -classpath "%PLAT%;%OUT%\aar\classes.jar" -d "%OUT%\classes" "%P%\gen\com\dsh\remote\R.java" "%P%\src\com\dsh\remote\Prefs.java" "%P%\src\com\dsh\remote\Diagnostics.java" "%P%\src\com\dsh\remote\ThemePalette.java" "%P%\src\com\dsh\remote\SecureStore.java" "%P%\src\com\dsh\remote\Tunnel.java" "%P%\src\com\dsh\remote\LocalForwarder.java" "%P%\src\com\dsh\remote\Discovery.java" "%P%\src\com\dsh\remote\TailscaleVpnService.java" "%P%\src\com\dsh\remote\BootAnimView.java" "%P%\src\com\dsh\remote\MainActivity.java" "%P%\src\com\dsh\remote\SettingsActivity.java" || goto :fail
+"%JDK%\javac.exe" -encoding UTF-8 -classpath "%PLAT%;%OUT%\aar\classes.jar" -d "%OUT%\classes" "%P%\gen\com\dsh\remote\R.java" "%P%\src\com\dsh\remote\Prefs.java" "%P%\src\com\dsh\remote\Diagnostics.java" "%P%\src\com\dsh\remote\NetworkChangePolicy.java" "%P%\src\com\dsh\remote\EndpointPolicy.java" "%P%\src\com\dsh\remote\ThemePalette.java" "%P%\src\com\dsh\remote\SecureStore.java" "%P%\src\com\dsh\remote\Tunnel.java" "%P%\src\com\dsh\remote\LocalForwarder.java" "%P%\src\com\dsh\remote\Discovery.java" "%P%\src\com\dsh\remote\TailscaleVpnService.java" "%P%\src\com\dsh\remote\BootAnimView.java" "%P%\src\com\dsh\remote\MainActivity.java" "%P%\src\com\dsh\remote\SettingsActivity.java" || goto :fail
 
 echo [4/6] dex...
 "%JDK%\jar.exe" cf "%OUT%\classes.jar" -C "%OUT%\classes" . || goto :fail

@@ -863,6 +863,9 @@ public class MainActivity extends Activity {
         wv.setBackgroundColor(BG);
         if(!isLogin) wv.addJavascriptInterface(new Object(){
             @android.webkit.JavascriptInterface public void signal(int kind,long bytes,int reason){Diagnostics.signal(getApplicationContext(),kind,bytes,reason);}
+            @android.webkit.JavascriptInterface public void pageEvent(int kind,int detail){
+                if(kind>=1&&kind<=5&&detail>=0&&detail<=8)Diagnostics.event(getApplicationContext(),16,kind,detail);
+            }
         },"DSHDiagnostics");
         wv.setLongClickable(false);
 
@@ -882,6 +885,10 @@ public class MainActivity extends Activity {
             @Override
             public android.webkit.WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){
                 Uri uri=request.getUrl();
+                if(!EndpointPolicy.allowsCleartext(uri.toString())){
+                    Diagnostics.event(MainActivity.this,17,1,request.isForMainFrame()?1:0);
+                    return new android.webkit.WebResourceResponse("text/plain","UTF-8",403,"Blocked",java.util.Collections.emptyMap(),new java.io.ByteArrayInputStream("Use HTTPS for public servers".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+                }
                 if(!isLogin && "dsh".equals(appMode) && uri.getPath()!=null && uri.getPath().startsWith("/__dsh/android-skin/")
                     && uri.getAuthority()!=null && uri.getAuthority().equals(Uri.parse(currentUrl).getAuthority())){
                     String name=uri.getLastPathSegment();int res="mascot.png".equals(name)?R.drawable.ic_launcher:"happy.webp".equals(name)?R.drawable.fish_happy:"error.webp".equals(name)?R.drawable.fish_error:0;
@@ -894,6 +901,7 @@ public class MainActivity extends Activity {
                 if (isLogin) return false; // login flows anywhere
                 Uri u = req.getUrl();
                 String scheme = u.getScheme();
+                if(!EndpointPolicy.allowsCleartext(u.toString())){openExternally(u.toString());return true;}
                 if ("http".equals(scheme) || "https".equals(scheme)) {
                     // ZCode mode: its SPA hops hosts during auth/session setup —
                     // keep every hop inside the WebView or the session "restarts".
@@ -961,6 +969,9 @@ public class MainActivity extends Activity {
             @Override
             public void onReceivedHttpError(WebView view, WebResourceRequest req,
                     android.webkit.WebResourceResponse response) {
+                String path=req.getUrl().getPath();
+                int category=path!=null&&path.startsWith("/plugins/")?1:path!=null&&path.startsWith("/assets/")?2:0;
+                if(category!=0||req.isForMainFrame())Diagnostics.event(MainActivity.this,18,response.getStatusCode(),category);
                 if (!isLogin && !destroyed && req.isForMainFrame() && response.getStatusCode() >= 500) {
                     pageLoadFailed = true;
                     pageEverLoaded = false;
@@ -1067,7 +1078,7 @@ public class MainActivity extends Activity {
         } else {
             // Use the exact Chrome-on-Android UA: the server may feature-detect
             // "WebView" and serve a reduced file service.
-            s.setUserAgentString("Mozilla/5.0 (Linux; Android 14; SM-F7310) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36");
+            s.setUserAgentString(WebSettings.getDefaultUserAgent(this));
         }
     }
 
@@ -1320,7 +1331,7 @@ public class MainActivity extends Activity {
             if (networkRecoveryPending) {
                 networkRecoveryPending = false;
                 web.setNetworkAvailable(true);
-                recovery = "window.__dshNetworkChanged&&window.__dshNetworkChanged(true);";
+                recovery = "window.__dshNetworkChanged&&window.__dshNetworkChanged();";
             }
             web.evaluateJavascript(recovery + "window.__dshConnectionState?window.__dshConnectionState("
                 + autoReconnect + "):'weak'", new android.webkit.ValueCallback<String>() {
@@ -1337,7 +1348,7 @@ public class MainActivity extends Activity {
                         return;
                     }
                     if (!s.equals(lastConnectionState)) {
-                        Diagnostics.event(MainActivity.this,3,"ok".equals(s)?1:"bad".equals(s)?2:"reconnecting".equals(s)?3:"loading".equals(s)?4:5,0);
+                        Diagnostics.event(MainActivity.this,3,"ok".equals(s)?1:"bad".equals(s)?2:"reconnecting".equals(s)?3:"loading".equals(s)?4:"auth".equals(s)?6:"limited".equals(s)?7:"server".equals(s)?8:5,0);
                         lastConnectionState = s;
                     }
                     state = ST_READY;
@@ -1345,6 +1356,9 @@ public class MainActivity extends Activity {
                     if ("bad".equals(s)) {
                         subtitleView.setText(autoReconnect ? "连接异常 · 自动重连中" : "连接异常");
                         setDot(0xFFFF5C5C);
+                    } else if("auth".equals(s)||"server".equals(s)||"limited".equals(s)){
+                        subtitleView.setText("auth".equals(s)?"登录已失效，请重新授权":"limited".equals(s)?"请求受限，请稍后重试":"电脑工作台服务异常");
+                        setDot(0xFFF5C542);
                     } else if (!"ok".equals(s)) {
                         subtitleView.setText("reconnecting".equals(s) ? "正在恢复连接…" : "正在检查连接…");
                         setDot(0xFFF5C542);
@@ -1536,39 +1550,26 @@ public class MainActivity extends Activity {
             android.net.ConnectivityManager cm =
                 (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
             if (cm == null) return;
-            netCb = new android.net.ConnectivityManager.NetworkCallback() {
-                @Override public void onAvailable(android.net.Network n) {
-                    Diagnostics.event(MainActivity.this,6,0,0);
-                    handler.post(new Runnable() {
-                        @Override public void run() {
-                            if (mainRoot == null || destroyed) return;
-                            if (pageEverLoaded) networkRecoveryPending = true;
-                            if (!resumed) return;
-                            if (pageEverLoaded && !pageLoading) {
-                                schedulePoll();
-                            }
-                            if (!pageEverLoaded && !pageLoading) {
-                                reconnectAt = 0;
-                                poll();
-                            }
-                        }
-                    });
-                }
-
-                @Override public void onCapabilitiesChanged(android.net.Network n,android.net.NetworkCapabilities caps){
+            final NetworkChangePolicy pathPolicy=new NetworkChangePolicy();
+            netCb=new android.net.ConnectivityManager.NetworkCallback(){
+                private void refresh(){handler.post(()->{
+                    if(destroyed)return;
+                    android.net.Network best=SecureStore.physicalNetwork(cm);
+                    android.net.NetworkCapabilities caps=best==null?null:cm.getNetworkCapabilities(best);
+                    int change=pathPolicy.update(best==null?0:best.getNetworkHandle(),
+                        caps!=null&&caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED),"");
+                    if(change==0)return;
                     Diagnostics.network(MainActivity.this,caps);
-                }
-                @Override public void onLost(android.net.Network n) {
-                    Diagnostics.event(MainActivity.this,7,0,0);
-                    handler.post(new Runnable() {
-                        @Override public void run() {
-                            if (!destroyed && mainRoot != null && pageEverLoaded) {
-                                networkRecoveryPending = true;
-                                if (resumed) subtitleView.setText("网络切换中…");
-                            }
-                        }
-                    });
-                }
+                    Diagnostics.event(MainActivity.this,15,change,1);
+                    if(pageEverLoaded)networkRecoveryPending=true;
+                    if(resumed){
+                        if(!pageEverLoaded&&!pageLoading)reconnectAt=0;
+                        schedulePoll();
+                    }
+                });}
+                @Override public void onAvailable(android.net.Network n){refresh();}
+                @Override public void onLost(android.net.Network n){refresh();}
+                @Override public void onCapabilitiesChanged(android.net.Network n,android.net.NetworkCapabilities c){refresh();}
             };
             cm.registerNetworkCallback(
                 new android.net.NetworkRequest.Builder()

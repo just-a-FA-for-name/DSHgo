@@ -88,6 +88,7 @@ public final class Discovery {
     private static boolean probe(String url) {
         HttpURLConnection c = null;
         try {
+            if(!EndpointPolicy.allowsCleartext(url))return false;
             c = (HttpURLConnection) new URL(url).openConnection();
             c.setConnectTimeout(12000);
             c.setReadTimeout(12000);

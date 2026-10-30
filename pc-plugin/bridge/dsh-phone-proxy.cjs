@@ -195,7 +195,7 @@ function waitingPage(res, note) {
 <style>body{font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#111;color:#eee;text-align:center;padding:0 24px}</style>
 </head><body><div><h2>正在等待电脑上的 DSH 桌面 App…</h2>
 <p>${note || 'App 未启动或还在启动中，本页每 5 秒自动重试。'}</p>
-<p>若长时间没有反应，请在电脑上双击「手机远程启动.bat」。</p></div></body></html>`);
+<p>若长时间没有反应，请确认电脑 DSH 已运行且 dsh-phone-remote 插件已启用。</p></div></body></html>`);
 }
 
 function forward(req, res, targetPort, retried) {
@@ -239,14 +239,13 @@ function forward(req, res, targetPort, retried) {
       const type = String(headers['content-type'] || '');
       const wantsGzip = /gzip/.test(String(req.headers['accept-encoding'] || ''));
       const enc = String(headers['content-encoding'] || '').toLowerCase();
-      // Enable SharedArrayBuffer (the file-resource/WASM service needs it):
-      // cross-origin isolation headers on HTML documents. credentialless keeps
-      // SAB working while letting plain cross-origin images (e.g. the account
-      // avatar from an external CDN, no CORP header) render — require-corp
-      // silently blocked those.
+      // Preserve upstream policy. Forced COEP can block credentialed plugin
+      // resources in WebView without actually enabling crossOriginIsolated.
       if (/text\/html/.test(type)) {
-        headers['cross-origin-opener-policy'] = 'same-origin';
-        headers['cross-origin-embedder-policy'] = 'credentialless';
+        if(process.env.DSH_PHONE_CROSS_ORIGIN_ISOLATION==='1'){
+          headers['cross-origin-opener-policy']='same-origin';
+          headers['cross-origin-embedder-policy']='credentialless';
+        }
         headers['cache-control'] = 'no-store';
         // Install upload transport before any DSH plugin captures Worker.
         if (req.method !== 'HEAD' && up.statusCode === 200 && ['','gzip','br','deflate'].includes(enc)) {

@@ -247,10 +247,19 @@ test('mobile drawer layout, interaction and injection regressions', {timeout: 30
     assert.equal(await tick(true), 'ok');
     assert.equal(await evaluate('window.recoveryOnlineEvents'), 2);
   });
-  await t.test('Android network callbacks can recover an already-loaded page', async () => {
+  await t.test('background-network callbacks cannot interrupt a healthy open stream', async () => {
+    await evaluate(`new Promise((resolve,reject)=>{
+      window.healthyStream=new WebSocket('ws://127.0.0.1:${server.address().port}/api/synthetic-stream');
+      healthyStream.onopen=()=>resolve(true);healthyStream.onerror=reject;
+    })`);
+    const before=await evaluate('window.recoveryOnlineEvents');
     await evaluate('window.testClock+=5000;window.__dshNetworkChanged(true)');
-    assert.equal(await tick(true, false), 'ok');
-    assert.equal(await evaluate('window.recoveryOnlineEvents'), 3);
+    assert.equal(await tick(true,false),'ok');
+    assert.equal(await evaluate('window.recoveryOnlineEvents'),before);
+    assert.equal(await evaluate('healthyStream.readyState'),1);
+    await evaluate('healthyStream.close()');
+    await new Promise(resolve=>setTimeout(resolve,50));
+    await evaluate("fetch('/api/health')");
   });
   await t.test('concurrent polls share a probe and an old timeout cannot overwrite recovery', async () => {
     holdProbe = true;
@@ -266,6 +275,9 @@ test('mobile drawer layout, interaction and injection regressions', {timeout: 30
     assert.equal(await tick(true, false), 'ok');
   });
   await t.test('a reachable web server alone cannot pretend the workbench session recovered', async () => {
+    backendAvailable=false;
+    assert.equal(await tick(),'bad');
+    backendAvailable=true;
     await evaluate('window.testClock+=1000;window.simulateHandshake=false;window.__dshNetworkChanged(true)');
     assert.equal(await tick(true, false), 'reconnecting');
     await evaluate('window.testClock+=13000');
@@ -313,6 +325,36 @@ test('mobile drawer layout, interaction and injection regressions', {timeout: 30
     await evaluate('window.testClock+=5000');
     assert.equal(await tick(), 'ok');
     await evaluate('syntheticStream.close()');
+  });
+  await t.test('HTTP application errors never synthesize offline events',async()=>{
+    await evaluate("fetch('/api/health')");
+    const before=await evaluate('window.recoveryOfflineEvents');
+    for(const [status,state]of [[404,'ok'],[401,'auth'],[403,'auth'],[429,'limited'],[500,'server'],[502,'server']]){
+      await evaluate(`window.__dshTransportResult('/api/synthetic-error',false,${status})`);
+      assert.equal(await tick(),state);
+      assert.equal(await evaluate('window.recoveryOfflineEvents'),before);
+      await evaluate("fetch('/api/health')");
+    }
+  });
+  await t.test('early WebView compatibility preserves promise subclasses, abort reason and listener cleanup',async()=>{
+    const script=fs.readFileSync(path.join(__dirname,'../pc-plugin/bridge/transport.js'),'utf8').split('/* Runs before DSH boot.')[0];
+    await evaluate(`window.savedResolvers=Promise.withResolvers;window.savedAny=AbortSignal.any;Promise.withResolvers=undefined;AbortSignal.any=undefined;window.bootstrapEvents=[];window.DSHDiagnostics={pageEvent:(...args)=>bootstrapEvents.push(args)};`+script);
+    const result=await evaluate(`(async()=>{
+      class Child extends Promise{};const task=Child.withResolvers();task.resolve(42);
+      const a=new AbortController(),b=new AbortController();let added=0,removed=0;
+      for(const signal of [a.signal,b.signal]){
+        const add=signal.addEventListener.bind(signal),remove=signal.removeEventListener.bind(signal);
+        signal.addEventListener=(...args)=>{added++;return add(...args)};
+        signal.removeEventListener=(...args)=>{removed++;return remove(...args)};
+      }
+      const combined=AbortSignal.any([a.signal,b.signal,a.signal]);const reason={synthetic:true};b.abort(reason);
+      const already=AbortSignal.any([b.signal]);
+      let rejected=false;try{AbortSignal.any([{}])}catch(e){rejected=e instanceof TypeError;}
+      const resource=document.createElement('script');resource.src='/plugins/synthetic.js';document.head.appendChild(resource);resource.dispatchEvent(new Event('error'));
+      return {subclass:task.promise instanceof Child,value:await task.promise,reason:combined.reason===reason,already:already.reason===reason,added,removed,rejected,numericOnly:bootstrapEvents.every(args=>args.every(Number.isInteger)),resourceError:bootstrapEvents.some(args=>args[0]===1&&args[1]===1)};
+    })()`);
+    assert.deepEqual(result,{subclass:true,value:42,reason:true,already:true,added:2,removed:2,rejected:true,numericOnly:true,resourceError:true});
+    await evaluate('Promise.withResolvers=savedResolvers;AbortSignal.any=savedAny;');
   });
   await t.test('real upload Worker resumes after a lost acknowledgement and preserves DSH receipts', async () => {
     const pluginRoot = fs.existsSync(path.join(__dirname, '../pc-plugin')) ? '../pc-plugin' : '../dsh-phone-remote';

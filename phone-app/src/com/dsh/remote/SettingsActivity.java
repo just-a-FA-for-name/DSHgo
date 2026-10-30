@@ -282,7 +282,7 @@ public class SettingsActivity extends Activity {
         row.addView(brand);
 
         TextView ver = new TextView(this);
-        ver.setText("DSHgo  v1.2");
+        try{ver.setText("DSHgo  "+getPackageManager().getPackageInfo(getPackageName(),0).versionName);}catch(Exception ignored){ver.setText("DSHgo");}
         ver.setTextColor(DIM);
         ver.setTextSize(12.5f);
         ver.setPadding(0, dp(12), 0, 0);
@@ -350,6 +350,7 @@ public class SettingsActivity extends Activity {
                 String v = input.getText().toString().trim();
                 if (v.isEmpty()) v = Prefs.DEFAULT_URL;
                 if (!v.startsWith("http")) v = "https://" + v;
+                if(!EndpointPolicy.allowsCleartext(v)){toast("公开服务器请使用 HTTPS，HTTP 仅用于 tailnet 或私有内网");return;}
                 Prefs.get(this).edit().putString(Prefs.SERVER_URL, v)
                     .putString(Prefs.TARGET_MODE, "manual").apply();
                 toast("已保存，返回后生效");
@@ -403,6 +404,7 @@ public class SettingsActivity extends Activity {
                 String detail = "尚未发现目标，请先自动发现或填写服务器地址";
                 HttpURLConnection c = null;
                 try {
+                    if(!EndpointPolicy.allowsCleartext(target))throw new SecurityException("Public HTTP blocked; use HTTPS");
                     java.net.URL url = new URL(target);
                     java.net.InetAddress.getAllByName(url.getHost());
                     detail = "DNS 已解析，正在检查 HTTPS / 桥接";
@@ -414,6 +416,9 @@ public class SettingsActivity extends Activity {
                     Diagnostics.event(SettingsActivity.this,11,code,System.currentTimeMillis()-t0);
                     up = code >= 200 && code < 400;
                     detail = "DNS 解析成功；HTTP " + code + (code >= 500 ? "（电脑桥接或工作台未就绪）" : "");
+                } catch(SecurityException e){
+                    Diagnostics.event(SettingsActivity.this,11,-3,System.currentTimeMillis()-t0);
+                    detail="公开地址需要 HTTPS；HTTP 仅支持显式配置的 tailnet 或内网目标";
                 } catch (java.net.UnknownHostException e) {
                     Diagnostics.event(SettingsActivity.this,11,-2,System.currentTimeMillis()-t0);
                     detail = "DNS 解析失败：请重新连接 DSHgo 隧道，确认 MagicDNS 已启用";
@@ -437,7 +442,7 @@ public class SettingsActivity extends Activity {
                             "目标可达：" + (reachable ? "是（" + ms + " ms）" : "否") + "\n" +
                             diagnostic + "\n\n" +
                             (reachable ? "一切就绪，返回即可使用。"
-                                       : "不可达时请检查：① 电脑是否开机并双击了「手机远程启动.bat」② 手机 Tailscale 是否已连接。");
+                                       : "不可达时请检查：① 电脑 DSH 是否运行且 dsh-phone-remote 插件已启用② DSHgo 内置隧道是否已连接。");
                         dialog("连接诊断", textBlock(body))
                             .setPositiveButton("好", null)
                             .show();
@@ -665,27 +670,14 @@ public class SettingsActivity extends Activity {
         toast("已重置，回到主界面后重新扫描");
     }
 
-    private String tailscaleSummary() {
-        try {
-            getPackageManager().getPackageInfo("com.tailscale.ipn", 0);
-            return isVpnUp() ? "已安装 · 已连接" : "已安装 · 未连接（点按打开）";
-        } catch (Exception e) {
-            return "未安装（点按前往安装）";
-        }
+    private String tailscaleSummary(){
+        Tunnel tunnel=Tunnel.get(this);
+        return tunnel.isEngineUp()?"内置引擎 · "+tunnel.backendState():"内置引擎未启动";
     }
-
-    private void openTailscale() {
-        try {
-            getPackageManager().getPackageInfo("com.tailscale.ipn", 0);
-            Intent i = getPackageManager().getLaunchIntentForPackage("com.tailscale.ipn");
-            if (i != null) { i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(i); return; }
-        } catch (Exception ignored) {}
-        try {
-            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.tailscale.ipn")));
-        } catch (Exception e) {
-            try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://tailscale.com/download"))); }
-            catch (Exception ignored) {}
-        }
+    private void openTailscale(){
+        Intent intent=new Intent(this,MainActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        startActivity(intent);
     }
 
     private boolean isVpnUp() {
@@ -752,7 +744,7 @@ public class SettingsActivity extends Activity {
         "把电脑上的 DSH 工作台带到手机：点开 App 就是电脑上正在跑的实时会话，可看可操作。\n" +
         "隧道内核已内置在本 App 中，无需安装任何其它应用。\n\n" +
         "【首次使用】\n" +
-        "1. 电脑：双击「手机远程启动.bat」（重启电脑后做这一个动作），保持窗口开着。\n" +
+        "1. 电脑：启动 DSH 桌面版，确认 dsh-phone-remote 插件已启用。\n" +
         "2. 手机：打开 DSH App → 点「登录账号」完成 Tailscale 登录（仅此一次）。\n" +
         "3. 系统会弹一次 VPN 授权确认 → 点允许。\n" +
         "   之后每次打开 App：隧道自动开启、自动发现电脑、自动进入工作台。\n\n" +
@@ -761,7 +753,7 @@ public class SettingsActivity extends Activity {
         "· 返回键默认把 App 挂后台（会话不断），可在设置里改为退出。\n" +
         "· 状态点：绿=已连接，黄=连接中，红=断开（断开后自动重连）。\n\n" +
         "【常见问题】\n" +
-        "· 一直“等待电脑端”：电脑没开机或没运行「手机远程启动.bat」。\n" +
+        "· 一直“等待电脑端”：电脑未开机、DSH 未启动或远程插件未启用。\n" +
         "· 发现不到目标：设置 → 重新发现目标；或手动填地址。\n" +
         "· 换账号：设置 → 隧道登录状态 → 退出登录。\n" +
         "· 其它异常：设置 → 连接诊断，按提示排查。\n\n" +

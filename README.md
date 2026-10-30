@@ -5,7 +5,7 @@
 手机端一个 APK（Tailscale 隧道内核内置），PC 端一个 dsh 插件 + Tailscale，开包即用。
 
 - 作者：**Fa2517**（[bilibili](https://space.bilibili.com/330037645)）
-- 版本：v1.2 · 本项目完全开源 · [更新日志](CHANGELOG.md)
+- 版本：v1.3 · 本项目完全开源 · [更新日志](CHANGELOG.md)
 - **有任何问题，欢迎在 B 站视频下方留言交流** → [@Fa2517](https://space.bilibili.com/330037645)；GitHub Issues 也行，但最好在 B 站知会一声
 
 ## 功能
@@ -36,10 +36,10 @@
 3. 进入 `pc-plugin/` 双击 `install.bat`，重启 dsh
 
 **手机端**
-1. 安装 `DSHRemote.apk`（[Releases](../../releases) 下载）
+1. 安装 `DSHgo-v1.3.apk`（[Releases](../../releases) 下载）
 2. 打开 → 登录 Tailscale（仅此一次）→ 允许 VPN / 麦克风授权
 
-更新到 v1.2：手机覆盖安装（保留原签名），电脑端重新运行插件安装脚本并重启 dsh。两端需要同时更新，具体原因与操作见 [V1.2 发布说明](docs/RELEASE-v1.2.md)。
+更新到 v1.3：手机覆盖安装（保留原签名），电脑端重新运行插件安装脚本并重启 dsh。两端需要同时更新，具体原因与操作见 [V1.3 发布说明](docs/RELEASE-v1.3.md)。
 
 之后每次打开 App 自动：建隧道 → 发现电脑 → 进入工作台。
 

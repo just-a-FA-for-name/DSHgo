@@ -33,6 +33,8 @@ import path from "node:path";
 import net from "node:net";
 import os from "node:os";
 
+import {resolveDshBin,serveRetryDelay} from "./runtime.js";
+
 export const name = "phone-remote";
 
 function homeDir() {
@@ -62,7 +64,7 @@ export function apply(ctx, config = {}) {
     minter: config.minter !== false,
     trustedHost: String(config.trustedHost || ""),
     serve: process.env.DSH_PHONE_NO_SERVE ? false : config.serve !== false,
-    dshBin: String(config.dshBin || "dsh"),
+    dshBin: resolveDshBin(config.dshBin),
     tailscaleBin: String(config.tailscaleBin || "tailscale"),
   };
 
@@ -71,6 +73,7 @@ export function apply(ctx, config = {}) {
   let stopped = false;
   let serveDone = false;
   let serveBusy = false;
+  let serveFailures=0,nextServeAt=0;
   let watchBusy = false;
 
   // ---- ports ----------------------------------------------------------
@@ -137,7 +140,8 @@ export function apply(ctx, config = {}) {
       // The stream is truncated so exactly one live token sequence exists at a time.
       const minterLog = process.env.DSH_PHONE_CLI_LOG || logFile("dsh-web-serve.log");
       const fd = openSync(minterLog, "w"); // truncate: one live token sequence
-      const child = spawn(cfg.dshBin, args, {
+      const executable=process.platform==='win32'&&/\s/.test(cfg.dshBin)?'"'+cfg.dshBin.replace(/"/g,'')+'"':cfg.dshBin;
+      const child = spawn(executable, args, {
         stdio: ["ignore", fd, fd],
         windowsHide: true,
         shell: true,
@@ -152,19 +156,22 @@ export function apply(ctx, config = {}) {
   }
 
   function publishServe() {
-    if (stopped || serveBusy) return;
+    if (stopped || serveBusy || Date.now()<nextServeAt) return;
     serveBusy = true;
     const tryBin = (bin) => new Promise((resolve) => {
-      execFile(bin, ["serve", "--bg", String(cfg.bridgePort)], { timeout: 8000 }, (err) => resolve(!err));
+      execFile(bin, ["serve", "--bg", String(cfg.bridgePort)], { timeout: 8000 }, (err) => resolve({ok:!err,missing:err?.code==='ENOENT'}));
     });
     (async () => {
-      let ok = await tryBin(cfg.tailscaleBin);
-      if (!ok) ok = await tryBin("C:\\Program Files\\Tailscale\\tailscale.exe");
-      if (ok) {
+      let result=await tryBin(cfg.tailscaleBin);
+      if(result.missing && cfg.tailscaleBin!=="C:\\Program Files\\Tailscale\\tailscale.exe")result=await tryBin("C:\\Program Files\\Tailscale\\tailscale.exe");
+      if(stopped){serveBusy=false;return;}
+      if(result.ok){
+        serveFailures=0;nextServeAt=0;
         serveDone = true;
         info(`tailscale serve -> :${cfg.bridgePort}`);
       } else {
-        warn("tailscale serve not configured (tailscale CLI not found or serve disabled)");
+        nextServeAt=Date.now()+serveRetryDelay(++serveFailures);
+        if(serveFailures===1)warn("Tailscale Serve unavailable: check CLI, tailnet permissions/certificates, or disable serve for manual HTTP. Retrying with backoff.");
       }
       serveBusy = false;
     })();

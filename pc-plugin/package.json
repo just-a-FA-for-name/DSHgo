@@ -1,6 +1,6 @@
 {
   "name": "dsh-phone-remote",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "DSHgo 手机远程（PC 端）：手机流量桥接 + 登录自动签发 + Tailscale 发布，守护整条手机→电脑链路。",
   "type": "module",
   "main": "lib/index.js",

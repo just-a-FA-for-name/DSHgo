@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
-    <!-- Only the in-process loopback forwarder uses plain HTTP / WebSocket.
-         Its remote connection still uses TLS through the encrypted tunnel. -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain>127.0.0.1</domain>
-        <domain>localhost</domain>
-    </domain-config>
+    <!-- Android cannot express CIDRs here. EndpointPolicy restricts explicit
+         HTTP URLs at the WebView and native request boundaries. HTTPS retains
+         normal certificate checks; there is no automatic HTTP downgrade. -->
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

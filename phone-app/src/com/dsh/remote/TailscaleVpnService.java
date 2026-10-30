@@ -34,14 +34,23 @@ public class TailscaleVpnService extends VpnService implements libtailscale.IPNS
     private final java.util.LinkedHashSet<android.net.Network> physicalNetworks =
         new java.util.LinkedHashSet<>();
 
+    private final NetworkChangePolicy pathPolicy=new NetworkChangePolicy();
+
     private void updateUnderlyingNetworks() {
         // null delegates selection to Android when no physical network is known.
         // An empty array explicitly tells Android the VPN has NO connectivity.
         android.net.ConnectivityManager cm = (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
         android.net.Network preferred = SecureStore.physicalNetwork(cm);
-        setUnderlyingNetworks(preferred == null ? null : new android.net.Network[]{preferred});
-        android.net.LinkProperties lp = preferred == null ? null : cm.getLinkProperties(preferred);
-        libtailscale.Libtailscale.onDNSConfigChanged(lp == null ? "" : lp.getInterfaceName());
+        android.net.LinkProperties lp=preferred==null?null:cm.getLinkProperties(preferred);
+        android.net.NetworkCapabilities caps=preferred==null?null:cm.getNetworkCapabilities(preferred);
+        String dns=lp==null?"":lp.getInterfaceName()+"|"+lp.getDnsServers()+"|"+lp.getDomains();
+        int change=pathPolicy.update(preferred==null?0:preferred.getNetworkHandle(),
+            caps!=null&&caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED),dns);
+        if((change&(NetworkChangePolicy.INITIAL|NetworkChangePolicy.PATH))!=0)
+            setUnderlyingNetworks(preferred==null?null:new android.net.Network[]{preferred});
+        if((change&(NetworkChangePolicy.INITIAL|NetworkChangePolicy.PATH|NetworkChangePolicy.DNS))!=0)
+            libtailscale.Libtailscale.onDNSConfigChanged(lp==null?"":lp.getInterfaceName());
+        if(change!=0)Diagnostics.event(this,15,change,0);
     }
 
     @Override

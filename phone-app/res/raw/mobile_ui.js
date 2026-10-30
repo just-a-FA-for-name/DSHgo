@@ -50,9 +50,7 @@
     const signal = (init && init.signal) || (input && input.signal);
     const run = n => originalFetch.apply(window, args).then(response => {
       // Validation, unsupported features and user errors are not outages.
-      const reachable = response.ok || (response.status >= 400 && response.status < 500
-        && ![401, 403, 408, 429].includes(response.status));
-      window.__dshTransportResult?.(input, reachable);
+      window.__dshTransportResult?.(input, response.ok, response.status);
       return response;
     }).catch(error => {
       if (error.name !== 'AbortError' && !(signal && signal.aborted)) {
@@ -285,6 +283,8 @@
   let lastApiSuccessAt = 0;
   let allowRecovery = true;
   let dispatchingRecovery = false;
+  let recoveryDispatched=false;
+  let httpProblem="";
   const now = () => performance.now();
   const retrySelector = [
     'button[aria-label="连接异常，点击立即重连"]',
@@ -304,17 +304,26 @@
     nextProbeAt = Math.min(nextProbeAt, now() + 2000);
   }
   function recovered() {
+    recoveryDispatched=false;
     needsRecovery = false;
     recoveryAttempt = 0;
     recoveringAt = 0;
     nextRecoveryAt = 0;
   }
-  window.__dshTransportResult = function (input, ok) {
+  window.__dshTransportResult = function (input, ok, status=0) {
     let url;
     try { url = new URL(typeof input === 'string' ? input : input.url, location.href); }
     catch (_) { return; }
     if (url.origin !== location.origin || !url.pathname.startsWith('/api/')) return;
+    if(status>0&&!ok){
+      // A server response proves transport reachability. Authentication,
+      // throttling and application errors must not tear down a healthy stream.
+      reachable=true;
+      httpProblem=status===401||status===403?'auth':status===429?'limited':status>=500?'server':'';
+      return;
+    }
     if (ok) {
+      httpProblem='';
       lastApiSuccessAt = now();
       reachable = true;
       if (!connectionRetryButton()) recovered();
@@ -325,12 +334,14 @@
   function reconnectWorkbench() {
     if (!allowRecovery || document.hidden || reachable !== true || !needsRecovery
         || now() < nextRecoveryAt) return;
+    const button=connectionRetryButton();
+    if(recoveryDispatched&&!button)return;
     recoveringAt = now();
     nextRecoveryAt = recoveringAt + Math.min(45000, 15000 * 2 ** Math.min(recoveryAttempt++, 2))
       + Math.random() * 500;
     dispatchingRecovery = true;
     try {
-      const button = connectionRetryButton();
+      recoveryDispatched=true;
       if (button && !button.disabled) {
         button.click(); // Calls DSH's connection.reconnect(), never a business action.
       } else {
@@ -382,7 +393,7 @@
   });
   window.__dshNetworkChanged = function (reconnect = false) {
     nextProbeAt = 0;
-    if (reconnect) needsRecovery = true;
+    if (reconnect && (reachable===false||connectionRetryButton())) needsRecovery = true;
   };
   // Keep native WebSocket constants, prototype and subclass behavior intact.
   // Observe only same-origin DSH streams, never inspector/third-party sockets
@@ -430,6 +441,7 @@
     void checkReachability();
     reconnectWorkbench();
     if (reachable === false) return 'bad';
+    if(httpProblem)return httpProblem;
     if (needsRecovery) return allowRecovery ? 'reconnecting' : 'bad';
     return reachable === true ? 'ok' : 'weak';
   };
