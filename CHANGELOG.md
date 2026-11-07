@@ -1,5 +1,19 @@
 # 更新日志
 
+## pc-plugin V1.5（增强版）— 2026-11-08
+
+- 托管 Tailscale：`tailscaled` 不可达时尝试拉起，隧道没通时自动 `tailscale up`，就绪后幂等执行 `tailscale serve --bg <bridgePort>`，失败按退避重试；`DSH 关 → 隧道关`可配。
+- 设置页新增「手机远程」面板：隧道状态 / 账号 / 端口 / 子进程存活，提供连接、断开、发布到 Tailnet、重启桥接、刷新。
+- **退出当前账号**：执行 `tailscale logout`（作废本机 node key，可在授权页换账号），带二次确认；执行后收掉 bridge/minter 并挂起自动连接，避免下一轮看门狗把账号接回去。接口 `POST /phone-remote/logout`，必须带 `{"confirm": true}`。
+- Serve 未启用时把 `https://login.tailscale.com/f/serve?node=<Self.ID>` 抓到面板上并给一键重试；HTTPS Certificates 未开时给出对应提示。
+- 登录链接只认 30 分钟内的，且不再每 30 秒换发一次；`logout` 与隧道就绪后作废旧链接，避免把已消费的一次性 code 端给用户（打开只会得到 404）。
+- minter 改用插件自建并每次核对的 `dsh-phone-minter` profile（只挂 `dsh-base` + `dsh-web-app`），不再复用用户 `web` profile；起不来时把原因写进状态快照与面板，失败按 30 秒起指数退避（封顶 5 分钟），「重启桥接」可清零。
+- 状态快照 `~/.dsh/logs/dsh-phone-remote-status.json`；`pc-plugin/test/` 下五套自测分别 21/21、21/21、17/17、21/21、16/16。
+
+> 该版本位于分支 `pc-plugin-v1.5`，与 `main` 上的 `pc-plugin`（V1.3）是**两条不同血统**：
+> 本分支不含 V1.2/V1.3 的电脑端分块续传（`/__dsh/uploads`）与手机传输注入（`/__dsh/transport.js`）。
+> 相关模块与安装脚本仍保留在树里，合并前请先读 `pc-plugin/README.md` 末尾的对比说明。
+
 ## V1.3 — 2026-10-30
 
 - 修复复杂网络中后台网络回调触发健康连接重连的问题；实际承载网络与 DNS 未变时不重复配置隧道。

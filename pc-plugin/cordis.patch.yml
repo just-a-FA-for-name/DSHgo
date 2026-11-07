@@ -1,5 +1,19 @@
 # dsh-phone-remote bundle layer — 应用顺序在用户 cordis.patch.yml 之前。
-# 插件主体：守护手机远程整条链路（cookie 签发 / 流量桥接 / Tailscale 发布）。
+# 插件主体：托管 Tailscale 隧道 + cookie 签发 + 流量桥接。
+#
+# 这里的 config 是默认值；想改就复制到 profile 的 cordis.patch.yml 里同 id 覆盖。
 - insert:
     - id: phone-remote
       name: "dsh-phone-remote"
+      config:
+        bridgePort: 8124
+        cliPort: 8090
+        minter: true
+        serve: true
+        tailscale:
+          enabled: true
+          autoUp: true
+          autoLogin: true
+          # DSH 关闭时断开隧道，实现「DSH 开→隧道开，DSH 关→隧道关」。
+          # 依赖 Tailscale 服务是 Manual 启动（不开机自启）。
+          stopOnExit: true

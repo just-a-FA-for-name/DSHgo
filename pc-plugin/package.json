@@ -1,11 +1,12 @@
 {
   "name": "dsh-phone-remote",
-  "version": "1.3.0",
-  "description": "DSHgo 手机远程（PC 端）：手机流量桥接 + 登录自动签发 + Tailscale 发布，守护整条手机→电脑链路。",
+  "version": "1.5.0",
+  "description": "DSHgo 手机远程（PC 端）：托管 Tailscale 隧道 + 手机流量桥接 + 登录自动签发，可在设置页查看状态并连接。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
   "files": [
@@ -33,6 +34,9 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
     }
   }
 }
